@@ -1,5 +1,13 @@
 from noise.ladp import LADP
-from noise.dae import DenoisingAutoEncoder
+from noise.ddp import DDP
+from noise.lavpn import LAVPN
+
+TRANSFORMS = [
+        LADP,
+        DDP,
+        LAVPN
+    ]
+TRANSFORM_NAMES = [a().name.lower() for a in TRANSFORMS]
 
 
 def create_noise_transform(name, **kwargs):
@@ -7,11 +15,8 @@ def create_noise_transform(name, **kwargs):
     Denoising pretraining transform entrypoint, allows to create transform just with
     parameters, without using its class
     """
-    transforms = [
-        LADP,
-        DenoisingAutoEncoder
-    ]
-    trans_dict = {a().name.lower(): a for a in transforms}
+
+    trans_dict = {a().name.lower(): a for a in TRANSFORMS}
     try:
         model_class = trans_dict[name.lower()]
     except KeyError:

@@ -5,7 +5,7 @@ from loguru import logger
 import torch
 
 from model import ModelManager
-from noise import create_noise_transform
+from noise import create_noise_transform, TRANSFORM_NAMES
 from utils import recover_ids
 from training import train_finetune, train_denoise
 
@@ -58,11 +58,11 @@ if __name__ == "__main__":
                         help="Directory to save the output model weights in h5 format")
     parser.add_argument("--data_dir", type=Path, default=".",
                         help="Path to the raw features")
-    parser.add_argument("--n_folds", type=int, default=4, choices=range(2,11),
+    parser.add_argument("--n_folds", type=int, default=4, choices=range(2, 11),
                         help="Number of folds/models")
     parser.add_argument("--image_size", type=int, default=256,
                         help="Size to resize model input")
-    parser.add_argument("--model_name", type=str, choices=["ternausnet", "resnet34", "resnet18"], default='ternausnet',
+    parser.add_argument("--model_name", type=str, choices=TRANSFORM_NAMES, default='ternausnet',
                         help="Name of the model file")
     parser.add_argument("--denoising_transform_name", type=str, default='ladp', choices=['ladp', 'dae'],
                         help="Name of image nosing technique")

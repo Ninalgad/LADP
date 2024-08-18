@@ -4,11 +4,11 @@ from noise.utils import one_hot2dist
 
 
 class LAVPN(NoisingTransform):
-    def __init__(self, sd=1, s0=0.08, s1=0.3):
-        super(LAVPN, self).__init__(sd=sd)
+    def __init__(self, sd=0.8, s0=0.08, s1=0.3):
+        super(LAVPN, self).__init__("LAVPN", sd=sd)
         self.s0, self.s1 = s0, s1
 
-    def apply(self, image, mask=None):
+    def add_noise(self, image, mask=None):
         dist = one_hot2dist(mask)
         dist = - dist.copy().astype("float32")
         dist = (dist - dist.min()) / (dist.max() - dist.min() + 1e-5)

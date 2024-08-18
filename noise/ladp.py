@@ -4,8 +4,11 @@ from noise.utils import one_hot2dist
 
 
 class LADP(NoisingTransform):
-    def __init__(self, s0=.8, s1=1.5, gamma=0.95):
-        super(LADP, self).__init__('LADP')
+    """
+    Label-aware diffusion style nose implantation
+    """
+    def __init__(self, sd=0.8, s0=.8, s1=1.5, gamma=0.95):
+        super(LADP, self).__init__('LADP', sd)
         self.s0 = s0
         self.s1 = s1
         self.gamma = gamma

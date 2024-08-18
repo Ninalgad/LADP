@@ -4,12 +4,15 @@ from torch.utils.data import Dataset
 from scipy import ndimage
 
 
-MAP_STATISTICS = {"1ADC_ss": (1350.2495, 428.13467), "2Z_ADC": (0.34669298, 2.487756)}
+MODE_STATS = {
+    "1ADC_ss": {"MEAN": 1350.2495, "STD": 428.13467},
+    "2Z_ADC": {"MEAN": 0.34669298, "STD": 2.487756}
+}
 
 
 class ImageDataset(Dataset):
     def __init__(self, img_ids, data_dir, inp_size, transform=None):
-        self.x, self.y, self.d = load_data_bonbidhie2023(img_ids, data_dir, inp_size)
+        self.x, self.y = load_data_bonbidhie2023(img_ids, data_dir, inp_size)
         self.n = len(self.x)
         self.transform = transform
 
@@ -18,7 +21,7 @@ class ImageDataset(Dataset):
 
     def __getitem__(self, idx):
         batch = {}
-        image, label, dist = self.x[idx], self.y[idx], self.d[idx]
+        image, label = self.x[idx], self.y[idx]
 
         if self.transform is not None:
             transformed = self.transform(image=image, mask=label)
@@ -29,13 +32,13 @@ class ImageDataset(Dataset):
 
         batch['image'] = np.transpose(image, (2, 0, 1))
         batch['label'] = np.clip(np.transpose(label, (2, 0, 1)), 0, 1)
-        batch['dist'] = np.transpose(dist, (2, 0, 1))
+
         return batch
 
 
 class DenosingDataset(Dataset):
     def __init__(self, img_ids, data_dir, inp_size, noising_transform, transform=None):
-        self.x, self.y, self.d = load_data_bonbidhie2023(img_ids, data_dir, inp_size)
+        self.x, self.y = load_data_bonbidhie2023(img_ids, data_dir, inp_size)
         self.noise_transform = noising_transform
         self.transform = transform
 
@@ -47,7 +50,7 @@ class DenosingDataset(Dataset):
         transformed_image = self.transform(image=image)['image']
         image = np.clip(transformed_image, -6, image.max())
 
-        image, noise = self.noise_transform.apply(image, label, dist=self.d[idx])
+        image, noise = self.noise_transform.apply(image, label)
 
         if self.transform is not None:
             transformed = self.transform(image=image, mask=noise)
@@ -58,7 +61,7 @@ class DenosingDataset(Dataset):
         batch = dict()
         batch['image'] = np.transpose(image, (2, 0, 1))
         batch['label'] = np.transpose(noise, (2, 0, 1))
-        batch['dist'] = np.transpose(self.d[idx], (2, 0, 1))
+
         return batch
 
 
@@ -83,9 +86,8 @@ def preprocess(img, input_type=None, target_size=None):
 
     if input_type is not None:
         # normalise using precomputed stats
-        m, s = MAP_STATISTICS[input_type]
         idx = img != 0
-        img[idx] = (img[idx] - m) / pow(s, 1.2)
+        img[idx] = (img[idx] - MODE_STATS[input_type]["MEAN"]) / MODE_STATS[input_type]["STD"]
 
         # mask out background values to -6
         idx = np.logical_not(idx)
@@ -132,11 +134,9 @@ def load_data_bonbidhie2023(img_ids, data_dir, inp_size):
     # load and preprocess
     x = [load_inputs(x, data_dir, inp_size) for x in img_ids]
     y = [load_label(x, data_dir, inp_size) for x in img_ids]
-    d = [one_hot2dist(t) for t in y]
 
     # concat
     x = np.concatenate(x, axis=0)
     y = np.concatenate(y, axis=0)
-    d = np.concatenate(d, axis=0)
 
-    return x, y, d
+    return x, y

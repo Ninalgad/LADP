@@ -2,7 +2,8 @@ from abc import ABC, abstractmethod
 
 
 class NoisingTransform(ABC):
-    def __init__(self, sd=1):
+    def __init__(self, name, sd=1):
+        self.name = name
         self.sd = sd
 
     def apply(self, image, mask):
