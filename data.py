@@ -2,7 +2,6 @@ import numpy as np
 from medpy.io import load
 from torch.utils.data import Dataset
 from scipy import ndimage
-from utils import one_hot2dist
 
 
 MAP_STATISTICS = {"1ADC_ss": (1350.2495, 428.13467), "2Z_ADC": (0.34669298, 2.487756)}
