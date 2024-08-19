@@ -12,19 +12,19 @@ def dice(y_pred, y_true, k=1):
     return (2. * intersection) / (np.sum(y_true) + np.sum(y_pred) + k)
 
 
-def evaluate(model, validation_ids, data_dir, inp_size, device):
+def evaluate(model, validation_ids, data_dir, config, device):
     model.eval()
     preds, tars = [], []
     for idx in validation_ids:
 
         # use the volume as the batch
-        x = load_inputs(idx, data_dir=data_dir, target_size=inp_size, channels_first=True)
+        x = load_inputs(idx, data_dir=data_dir, config=config, channels_first=True)
         x = torch.tensor(x, dtype=torch.float32).to(device)
         p = F.sigmoid(model(x)).detach().cpu().numpy()
-        y = load_label(idx, data_dir=data_dir, channels_first=True)
+        y = load_label(idx, data_dir=data_dir, config=config, channels_first=True)
 
         # scale back to original size
-        s = y.shape[-1] / inp_size
+        s = y.shape[-1] / int(config['image_size'])
         p = zoom(p, (1, 1, s, s))
 
         preds.append(p)
@@ -34,7 +34,7 @@ def evaluate(model, validation_ids, data_dir, inp_size, device):
     best_score, best_thresh = -1, 0
     min_ = min([p.min() for p in preds])
     max_ = max([p.max() for p in preds])
-    for t in np.linspace(min_, max_, num=200):
+    for t in np.linspace(min_, max_, num=int(config['num_thresh_sweep_steps'])):
         scores = []
         for (p, y) in zip(preds, tars):
             pt = (p > t).astype('float32')

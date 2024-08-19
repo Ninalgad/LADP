@@ -11,8 +11,8 @@ MODE_STATS = {
 
 
 class ImageDataset(Dataset):
-    def __init__(self, img_ids, data_dir, inp_size, transform=None):
-        self.x, self.y = load_data_bonbidhie2023(img_ids, data_dir, inp_size)
+    def __init__(self, img_ids, data_dir, config, transform=None):
+        self.x, self.y = load_data_bonbidhie2023(img_ids, data_dir, config)
         self.n = len(self.x)
         self.transform = transform
 
@@ -20,7 +20,6 @@ class ImageDataset(Dataset):
         return self.n
 
     def __getitem__(self, idx):
-        batch = {}
         image, label = self.x[idx], self.y[idx]
 
         if self.transform is not None:
@@ -30,6 +29,7 @@ class ImageDataset(Dataset):
             label = transformed["mask"]
             del transformed
 
+        batch = dict()
         batch['image'] = np.transpose(image, (2, 0, 1))
         batch['label'] = np.clip(np.transpose(label, (2, 0, 1)), 0, 1)
 
@@ -37,10 +37,11 @@ class ImageDataset(Dataset):
 
 
 class DenosingDataset(Dataset):
-    def __init__(self, img_ids, data_dir, inp_size, noising_transform, transform=None):
-        self.x, self.y = load_data_bonbidhie2023(img_ids, data_dir, inp_size)
+    def __init__(self, img_ids, data_dir, noising_transform, config, transform=None):
+        self.x, self.y = load_data_bonbidhie2023(img_ids, data_dir, config)
         self.noise_transform = noising_transform
         self.transform = transform
+        self.config = config
 
     def __len__(self):
         return len(self.x)
@@ -48,7 +49,7 @@ class DenosingDataset(Dataset):
     def __getitem__(self, idx):
         image, label = self.x[idx], self.y[idx]
         transformed_image = self.transform(image=image)['image']
-        image = np.clip(transformed_image, -6, image.max())
+        image = np.clip(transformed_image, int(self.config['background']), image.max())
 
         image, noise = self.noise_transform.apply(image, label)
 
@@ -65,21 +66,20 @@ class DenosingDataset(Dataset):
         return batch
 
 
-def preprocess(img, input_type=None, target_size=None):
-    if target_size is not None:
-        # mask prevents blending with the background after scaling
-        mask = img != 0
+def preprocess(img, config, input_type=None):
+    # mask prevents blending with the background after scaling
+    mask = img != 0
 
-        # resize to 'target_size'
-        n = img.shape[-1]
-        s = target_size / img.shape[1]
-        img = ndimage.zoom(img, (s, s, 1), cval=0.0)
-        mask = ndimage.zoom(mask.astype('uint8'), (s, s, 1), cval=0.0)
+    # resize to 'target_size'
+    n = img.shape[-1]
+    s = int(config['image_size']) / img.shape[1]
+    img = ndimage.zoom(img, (s, s, 1), cval=0.0)
+    mask = ndimage.zoom(mask.astype('uint8'), (s, s, 1), cval=0.0)
 
-        # ensure background is constant
-        img = img * mask.astype(img.dtype)
+    # ensure background is constant
+    img = img * mask.astype(img.dtype)
 
-        assert n == img.shape[-1]
+    assert n == img.shape[-1]
 
     # set channels last by default
     img = np.transpose(img, [2, 0, 1])
@@ -89,25 +89,26 @@ def preprocess(img, input_type=None, target_size=None):
         idx = img != 0
         img[idx] = (img[idx] - MODE_STATS[input_type]["MEAN"]) / MODE_STATS[input_type]["STD"]
 
-        # mask out background values to -6
+        # mask out background values
+        cval = int(config['background'])
         idx = np.logical_not(idx)
-        img[idx] = -6
-        img = np.clip(img, -6, 6)
+        img[idx] = cval
+        img = np.clip(img, cval, img.max())
 
     img = np.expand_dims(img, -1)
     return img
 
 
 # loading and preprocessing
-def load_inputs(idx, data_dir, target_size=None, return_meta=False, channels_first=False):
+def load_inputs(idx, data_dir, config, return_meta=False, channels_first=False):
     ss_adc = data_dir / f"BONBID2023_Train/1ADC_ss/MGHNICU_{idx}-VISIT_01-ADC_ss.mha"
     zadc = data_dir / f"BONBID2023_Train/2Z_ADC/Zmap_MGHNICU_{idx}-VISIT_01-ADC_smooth2mm_clipped10.mha"
 
     ss_adc, _ = load(ss_adc)
-    ss_adc = preprocess(ss_adc, '1ADC_ss', target_size)
+    ss_adc = preprocess(ss_adc, config, '1ADC_ss')
 
     zadc, h = load(zadc)
-    zadc = preprocess(zadc, '2Z_ADC', target_size)
+    zadc = preprocess(zadc, config, '2Z_ADC')
 
     img = np.concatenate([ss_adc, zadc, zadc], axis=-1)
     if channels_first:
@@ -118,11 +119,11 @@ def load_inputs(idx, data_dir, target_size=None, return_meta=False, channels_fir
     return img
 
 
-def load_label(idx, data_dir, target_size=None, return_meta=False, channels_first=False):
+def load_label(idx, data_dir, config, return_meta=False, channels_first=False):
     label = data_dir / f"BONBID2023_Train/3LABEL/MGHNICU_{idx}-VISIT_01_lesion.mha"
 
     label, h = load(label)
-    label = preprocess(label, target_size=target_size)
+    label = preprocess(label, config=config)
     if channels_first:
         label = np.transpose(label, (0, 3, 1, 2))
     if return_meta:
@@ -130,10 +131,10 @@ def load_label(idx, data_dir, target_size=None, return_meta=False, channels_firs
     return label
 
 
-def load_data_bonbidhie2023(img_ids, data_dir, inp_size):
+def load_data_bonbidhie2023(img_ids, data_dir, config):
     # load and preprocess
-    x = [load_inputs(x, data_dir, inp_size) for x in img_ids]
-    y = [load_label(x, data_dir, inp_size) for x in img_ids]
+    x = [load_inputs(x, data_dir, config) for x in img_ids]
+    y = [load_label(x, data_dir, config) for x in img_ids]
 
     # concat
     x = np.concatenate(x, axis=0)

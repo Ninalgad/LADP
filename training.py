@@ -10,20 +10,24 @@ from augment import get_transform
 from loss import loss_func
 
 
-def train_denoise(model, device, output_name, training_ids, data_dir, noising_transform=None,
-                  inp_size=256, num_epochs=60, batch_size=16, lr=1e-4,
-                  debug=False):
+def train_denoise(model, device, output_name, training_ids, data_dir, noising_transform, config, debug=False):
+    batch_size = int(config['batch_size'])
+    num_epochs = int(config['num_denoising_epochs'])
+    inp_size = int(config['image_size'])
+
     if debug:
         batch_size = 2
         training_ids = training_ids[:2]
+        num_epochs = 1
 
     train_loader = DataLoader(
-        DenosingDataset(training_ids, data_dir, inp_size,
+        DenosingDataset(training_ids, data_dir,
                         transform=get_transform(inp_size),
-                        noising_transform=noising_transform),
+                        noising_transform=noising_transform,
+                        config=config),
         batch_size=batch_size, shuffle=True)
 
-    optimizer = Adam(model.parameters(), lr=lr)
+    optimizer = Adam(model.parameters(), lr=float(config['lr_pretrain']))
 
     def denoise_train_step(batch):
         inp, tar = batch['image'].to(device).float(), batch['label'].to(device).float()
@@ -31,7 +35,7 @@ def train_denoise(model, device, output_name, training_ids, data_dir, noising_tr
 
         outputs = model(inp)
 
-        mask = (tar > -6).float()
+        mask = (tar > int(config['background'])).float()
         loss_ = (tar - outputs) ** 2
         loss_ = torch.sum(loss_ * mask) / (torch.sum(mask) + 1)
 
@@ -39,11 +43,7 @@ def train_denoise(model, device, output_name, training_ids, data_dir, noising_tr
         optimizer.step()
         return loss_.detach().cpu().numpy()
 
-    if debug:
-        num_epochs = 1
-
     for epoch in range(num_epochs):
-
         train_epoch(model, train_loader, denoise_train_step, debug)
 
         torch.save({
@@ -52,17 +52,22 @@ def train_denoise(model, device, output_name, training_ids, data_dir, noising_tr
 
 
 def train_finetune(model, device, output_name, training_ids, validation_ids, data_dir,
-                   inp_size=256, num_epochs=60, batch_size=16, lr=1e-4, debug=False):
+                   config, debug=False):
+    batch_size = int(config['batch_size'])
+    num_epochs = int(config['num_ft_epochs'])
+    inp_size = int(config['image_size'])
+
     if debug:
+        num_epochs = 1
         batch_size = 2
         training_ids = training_ids[:2]
         validation_ids = validation_ids[:2]
 
-    train_loader = DataLoader(ImageDataset(training_ids, data_dir, inp_size,
+    train_loader = DataLoader(ImageDataset(training_ids, data_dir, config,
                                            transform=get_transform(inp_size)),
                               batch_size=batch_size, shuffle=True)
 
-    optimizer = Adam(model.parameters(), lr=lr)
+    optimizer = Adam(model.parameters(), lr=float(config['lr_finetune']))
 
     def train_step(batch):
         inp, tar = batch['image'].to(device), batch['label'].to(device).float()
@@ -76,17 +81,13 @@ def train_finetune(model, device, output_name, training_ids, validation_ids, dat
         return loss_.detach().cpu().numpy()
 
     best_val = -1
-
-    if debug:
-        num_epochs = 1
-
     for epoch in range(num_epochs):
 
         train_epoch(model, train_loader, train_step, debug)
 
         gc.collect()
         with torch.no_grad():
-            val, thresh = evaluate(model, validation_ids, data_dir, inp_size, device)
+            val, thresh = evaluate(model, validation_ids, data_dir, config, device)
 
         if val > best_val:
             best_val = val
